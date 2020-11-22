@@ -9,14 +9,26 @@
 #      -
 #      -
 
-args=("$@") # store all of the arguments for later use
 # ${args[0]} is the name of the first argument instead of the command itself
+args=("$@") # store all of the arguments in an array for later use
+files=() # all arguments that are not flags/options
+# go through each argument and remove it if it starts with '-'
+
+# Add argument to $files array if first character is not '-' (flag)
+# There probably is a much simpler way to do this
+for i in "${args[@]}"; do
+    if [[ ${i:0:1} != "-" ]]; then
+        files+=("$i")
+    fi
+done
+
 k_flag=false # keep the compiled files if true
 h_flag=false # use of help flag - do not exit with error
+t_flag=false
 
 # Print usage information
 print_usage() {
-    printf "Usage: jr [options] <source files>...\n" # are angled brackets appropriate?
+    printf "Usage: jr [options] <source files>...\n"
     if $h_flag; then
         exit 0
     fi
@@ -31,12 +43,14 @@ fi
 #(https://stackoverflow.com/questions/7069682/how-to-get-arguments-with-flags-in-bash9)
 #(https://stackoverflow.com/questions/192249/how-do-i-parse-command-line-arguments-in-bash)
 # Get possible options/flags
-while getopts 'kh' flag; do
+while getopts 'kht' flag; do
     case "${flag}" in
         k) k_flag=true # do not remove the compiled file if this is the case
            ;;
         h) h_flag=true
            print_usage
+           ;;
+        t) t_flag=true
            ;;
         *) print_usage
            ;;
@@ -63,7 +77,7 @@ remove_compiled_files() {
     fi
 
     if [[ $1 == 'file' ]]; then
-        rm "${args[0]%.*}.class" # remove the compiled file
+        rm "${files[0]%.*}.class" # remove the compiled file
     fi
     if [[ $1 == 'directory' ]]; then
         rm -r $package_name # remove the directory with .class files
@@ -74,16 +88,53 @@ remove_compiled_files() {
 #      - check what happens when a file that takes input is cancelled (^C) mid-run
 # can the javac in the branches be replaced with javac -d . "$1" ?
 # redirect error messages - can this be simplified?
+# FIXME - when k flag is passed, first argument becomes k instead of the file name
 compile_files() {
-    if [[ -n $package_name ]]
-    then
+    if [[ -n $package_name ]]; then
         javac -d . *.java 2> /dev/null # is the else even needed? it works regardless
         java "$package_name.$main_file" 2> /dev/null
         remove_compiled_files directory 2> /dev/null
     else
-        javac "${args[0]}" 2> /dev/null
-        java "${args[0]%.*}" "${args[@]:1}" 2> /dev/null # remove the extension and copy the arguments passed
+        javac "${files[0]}" 2> /dev/null
+        java "${files[0]%.*}" "${files[@]:1}" 2> /dev/null # remove the extension and copy the arguments passed
         remove_compiled_files file 2> /dev/null
+    fi
+}
+
+# Echo to stderr
+echoerr() { echo "$@" 1>&2; }
+
+# junit platform version should not matter
+# check if there is a JUnitTests.java file in the directory; else print error
+# do these commands generate new files that should be deleted?
+test_files() {
+    # testing format (should this be a separate function or combined?)
+    # javac -d . -cp ./junit-platform-console-standalone-1.5.0.jar *.java
+    # java -jar ./junit-platform-console-standalone-1.5.0.jar -cp . --scan-class-path
+
+    # print error if JUnitTests.java can't be found in the directory
+    # use file tests in conjuction with `pwd`?
+    # echo $(pwd)/JUnitTests.java
+
+    # TODO - print both errors instead of just the first one encountered
+    # if JUnitTests.java does not exist, print error and exit
+    if [[ ! -e $(pwd)/JUnitTests.java ]]; then
+        # print error that unit test file does not exist
+        echoerr JUnitTests.java does not exist
+        exit 1
+    fi
+
+    # search for the junit thing
+    jarname=$(find . -iname "junit-platform-console-standalone*.jar")
+    # check if jarname is non-empty
+    if [[ -n $jarname ]]; then
+        javac -d . -cp $jarname *.java
+        java -jar $jarname -cp . --scan-class-path
+        # clean up compiled files
+    else
+        # print to error that executable(?) file does not exist
+        echoerr JUnit executable JAR does not exist
+        exit 1
     fi
 }
 
@@ -113,4 +164,8 @@ compile_files() {
 # pretty_errors() {
 # }
 
-compile_files
+if $t_flag; then
+    test_files
+else
+    compile_files
+fi
