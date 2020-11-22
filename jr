@@ -1,0 +1,116 @@
+#!/bin/bash
+
+# TODO - Show usage information
+#      - Take in flags/options
+#      - put into functions (modularize + refactor)
+#      - custom flags (-k to keep the jvm file or -r to remove)
+#      - some source files are non-intuitively not compiled if there are errors in some of them
+#      - add something to properly run junit tests - similar to what is done in class (-t flag or something)
+#      -
+#      -
+
+args=("$@") # store all of the arguments for later use
+# ${args[0]} is the name of the first argument instead of the command itself
+k_flag=false # keep the compiled files if true
+h_flag=false # use of help flag - do not exit with error
+
+# Print usage information
+print_usage() {
+    printf "Usage: jr [options] <source files>...\n" # are angled brackets appropriate?
+    if $h_flag; then
+        exit 0
+    fi
+    exit 1 # exit with error; might have to remove if used for help (or pass an argument to decide)
+}
+
+# what if `javac` was previously passed; should `jr` remove those previously compiled files?
+# Print usage if there are not arguments passed with the command
+if [[ -z $args ]]; then
+    print_usage
+fi
+#(https://stackoverflow.com/questions/7069682/how-to-get-arguments-with-flags-in-bash9)
+#(https://stackoverflow.com/questions/192249/how-do-i-parse-command-line-arguments-in-bash)
+# Get possible options/flags
+while getopts 'kh' flag; do
+    case "${flag}" in
+        k) k_flag=true # do not remove the compiled file if this is the case
+           ;;
+        h) h_flag=true
+           print_usage
+           ;;
+        *) print_usage
+           ;;
+    esac
+done
+
+# get name of the package (can this be split into multiple lines?)
+package_name=$(find . -iname '*.java' -exec grep '^package' {} + | cut -d' ' -f2 | sed 's/.$//' | head -n1)
+
+main_file="" # get the source file containing the main method
+for file in $(find . -iname '*.java'); do # iterate over all java source files in directory
+    if [[ -n $(grep 'public static void main' $file) ]]; then
+        main_file=$file
+    fi
+done
+
+# e.g. turns "./test.java" into "test"
+main_file=$(echo $main_file | cut -d'.' -f2 | sed 's:^/::') # use : instead of / since it involves a path
+
+# Remove compiled files after running the program
+remove_compiled_files() {
+    if $k_flag; then # keep the files if the 'k' flag is passed
+        return
+    fi
+
+    if [[ $1 == 'file' ]]; then
+        rm "${args[0]%.*}.class" # remove the compiled file
+    fi
+    if [[ $1 == 'directory' ]]; then
+        rm -r $package_name # remove the directory with .class files
+    fi
+}
+
+# TODO - rather than completely removing errors, pass them to another function for later use
+#      - check what happens when a file that takes input is cancelled (^C) mid-run
+# can the javac in the branches be replaced with javac -d . "$1" ?
+# redirect error messages - can this be simplified?
+compile_files() {
+    if [[ -n $package_name ]]
+    then
+        javac -d . *.java 2> /dev/null # is the else even needed? it works regardless
+        java "$package_name.$main_file" 2> /dev/null
+        remove_compiled_files directory 2> /dev/null
+    else
+        javac "${args[0]}" 2> /dev/null
+        java "${args[0]%.*}" "${args[@]:1}" 2> /dev/null # remove the extension and copy the arguments passed
+        remove_compiled_files file 2> /dev/null
+    fi
+}
+
+# error format - 
+# maybe error can just be kept
+# check if javac passes without error before moving onto the other steps
+
+# test.java:3: error: class, interface, or enum expected
+# public lass test {
+#        ^
+# test.java:5: error: class, interface, or enum expected
+#     public static void main(String[] args) {
+#                   ^
+# test.java:8: error: class, interface, or enum expected
+#         another a = new another(5);
+#         ^
+# test.java:9: error: class, interface, or enum expected
+#         System.out.println(a);
+#         ^
+# test.java:10: error: class, interface, or enum expected
+#     }
+#     ^
+# 5 errors
+
+# how to parse error messages that are passed into the function?
+# # Take errors and make them prettier
+# pretty_errors() {
+# }
+
+compile_files

@@ -1,0 +1,2 @@
+# Ignore java files used for testing
+*.java
