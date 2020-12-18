@@ -2,12 +2,15 @@
 
 # TODO - Show usage information
 #      - Take in flags/options
-#      - put into functions (modularize + refactor)
+#      - put into functions (modularize + refactor) + add main function, etc.
 #      - custom flags (-k to keep the jvm file or -r to remove)
 #      - some source files are non-intuitively not compiled if there are errors in some of them
 #      - add something to properly run junit tests - similar to what is done in class (-t flag or something)
 #      -
 #      -
+
+# Print to stderr
+echoerr() { echo "$@" 1>&2; }
 
 # ${args[0]} is the name of the first argument instead of the command itself
 args=("$@") # store all of the arguments in an array for later use
@@ -28,7 +31,7 @@ t_flag=false
 
 # Print usage information
 print_usage() {
-    printf "Usage: jr [options] <source files>...\n"
+    printf "Usage: jr [options] <source files>\n"
     if $h_flag; then
         exit 0
     fi
@@ -57,11 +60,13 @@ while getopts 'kht' flag; do
     esac
 done
 
-# get name of the package (can this be split into multiple lines?)
+# should every argument be checked or is one enough?
+# get name of the package
 package_name=$(find . -iname '*.java' -exec grep '^package' {} + | cut -d' ' -f2 | sed 's/.$//' | head -n1)
 
 main_file="" # get the source file containing the main method
-for file in $(find . -iname '*.java'); do # iterate over all java source files in directory
+for file in $(find . -maxdepth 1 -iname '*.java'); do # iterate over all java source files in current directory (allows nesting)
+    # above might be redundant (just change $file to *.java)
     if [[ -n $(grep 'public static void main' $file) ]]; then
         main_file=$file
     fi
@@ -85,30 +90,41 @@ remove_compiled_files() {
 }
 
 # TODO - rather than completely removing errors, pass them to another function for later use
+#      - check if the file passed with jr is actually in the directory before running
 #      - check what happens when a file that takes input is cancelled (^C) mid-run
 # can the javac in the branches be replaced with javac -d . "$1" ?
 # redirect error messages - can this be simplified?
-# FIXME - when k flag is passed, first argument becomes k instead of the file name
 compile_files() {
     if [[ -n $package_name ]]; then
-        javac -d . *.java 2> /dev/null # is the else even needed? it works regardless
+        # simply below if possible
+        stderr="$(javac -d . *.java 2>&1 > /dev/null)"
+        if [[ $stderr =~ "Usage" ]]; then # check if there is a usage error instead of source code error
+            # below works but is there a way to speed it up?
+            echo "$stderr" | sed -z --expression='s/javac/jr/; s:<:[:; s:>:]:' # quote $stderr to preserve spacing
+            exit 1
+        else
+            javac -d . *.java
+        fi
         java "$package_name.$main_file" 2> /dev/null
         remove_compiled_files directory 2> /dev/null
     else
-        javac "${files[0]}" 2> /dev/null
+        stderr="$(javac "${files[0]}" 2>&1 > /dev/null)"
+        if [[ $stderr =~ "Usage" ]]; then
+            echo "$stderr" | sed -z --expression='s/javac/jr/; s:<:[:; s:>:]:' # change to match help
+            exit 1;
+        else
+            javac "${files[0]}"
+        fi
         java "${files[0]%.*}" "${files[@]:1}" 2> /dev/null # remove the extension and copy the arguments passed
         remove_compiled_files file 2> /dev/null
     fi
 }
 
-# Echo to stderr
-echoerr() { echo "$@" 1>&2; }
-
 # junit platform version should not matter
 # check if there is a JUnitTests.java file in the directory; else print error
 # do these commands generate new files that should be deleted?
 test_files() {
-    # testing format (should this be a separate function or combined?)
+    # testing format
     # javac -d . -cp ./junit-platform-console-standalone-1.5.0.jar *.java
     # java -jar ./junit-platform-console-standalone-1.5.0.jar -cp . --scan-class-path
 
@@ -129,8 +145,8 @@ test_files() {
     # check if jarname is non-empty
     if [[ -n $jarname ]]; then
         javac -d . -cp $jarname *.java
-        java -jar $jarname -cp . --scan-class-path
-        # clean up compiled files
+        java -jar $jarname -cp . --scan-class-path | less -r # pipe result with color into pager
+        # remove compiled files
     else
         # print to error that executable(?) file does not exist
         echoerr JUnit executable JAR does not exist
@@ -138,7 +154,7 @@ test_files() {
     fi
 }
 
-# error format - 
+# error format -
 # maybe error can just be kept
 # check if javac passes without error before moving onto the other steps
 
@@ -158,11 +174,6 @@ test_files() {
 #     }
 #     ^
 # 5 errors
-
-# how to parse error messages that are passed into the function?
-# # Take errors and make them prettier
-# pretty_errors() {
-# }
 
 if $t_flag; then
     test_files

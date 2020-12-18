@@ -1,2 +1,5 @@
 # Ignore java files used for testing
 *.java
+
+# Ignore compiled java files
+*.class
