@@ -38,9 +38,13 @@ print_usage() {
     exit 1 # exit with error; might have to remove if used for help (or pass an argument to decide)
 }
 
+# should every argument be checked or is one enough?
+# get name of the package
+package_name=$(find . -maxdepth 1 -iname '*.java' -exec grep '^package' {} + | cut -d' ' -f2 | sed 's/.$//' | head -n1)
+
 # what if `javac` was previously passed; should `jr` remove those previously compiled files?
-# Print usage if there are not arguments passed with the command
-if [[ -z $args ]]; then
+# Print usage if there are not arguments passed with the command and there is no package
+if [[ -z $args ]] && [[ -z $package_name ]]; then
     print_usage
 fi
 #(https://stackoverflow.com/questions/7069682/how-to-get-arguments-with-flags-in-bash9)
@@ -59,10 +63,6 @@ while getopts 'kht' flag; do
            ;;
     esac
 done
-
-# should every argument be checked or is one enough?
-# get name of the package
-package_name=$(find . -iname '*.java' -exec grep '^package' {} + | cut -d' ' -f2 | sed 's/.$//' | head -n1)
 
 main_file="" # get the source file containing the main method
 for file in $(find . -maxdepth 1 -iname '*.java'); do # iterate over all java source files in current directory (allows nesting)
