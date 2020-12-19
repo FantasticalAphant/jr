@@ -40,7 +40,7 @@ print_usage() {
 
 # should every argument be checked or is one enough?
 # get name of the package
-package_name=$(find . -maxdepth 1 -iname '*.java' -exec grep '^package' {} + | cut -d' ' -f2 | sed 's/.$//' | head -n1)
+package_name=$(find . -maxdepth 1 -iname '*.java' -exec grep '^package' {} + | cut -d' ' -f2 | sed 's/.$//' | tail -n1)
 
 # what if `javac` was previously passed; should `jr` remove those previously compiled files?
 # Print usage if there are not arguments passed with the command and there is no package
@@ -120,60 +120,38 @@ compile_files() {
     fi
 }
 
-# junit platform version should not matter
-# check if there is a JUnitTests.java file in the directory; else print error
-# do these commands generate new files that should be deleted?
 test_files() {
     # testing format
     # javac -d . -cp ./junit-platform-console-standalone-1.5.0.jar *.java
     # java -jar ./junit-platform-console-standalone-1.5.0.jar -cp . --scan-class-path
 
-    # print error if JUnitTests.java can't be found in the directory
-    # use file tests in conjuction with `pwd`?
-    # echo $(pwd)/JUnitTests.java
+    # TODO - with confirmation, ask if user wants to download the junit-platform thing
 
-    # TODO - print both errors instead of just the first one encountered
-    # if JUnitTests.java does not exist, print error and exit
-    if [[ ! -e $(pwd)/JUnitTests.java ]]; then
-        # print error that unit test file does not exist
+    jarname=$(find . -iname "junit-platform-console-standalone*.jar") # search for the junit JAR
+
+    if [[ ! -e $(pwd)/JUnitTests.java ]] && [[ -z $jarname ]]; then
         echoerr JUnitTests.java does not exist
-        exit 1
-    fi
-
-    # search for the junit thing
-    jarname=$(find . -iname "junit-platform-console-standalone*.jar")
-    # check if jarname is non-empty
-    if [[ -n $jarname ]]; then
-        javac -d . -cp $jarname *.java
-        java -jar $jarname -cp . --scan-class-path | less -r # pipe result with color into pager
-        # remove compiled files
-    else
-        # print to error that executable(?) file does not exist
         echoerr JUnit executable JAR does not exist
         exit 1
     fi
+
+    if [[ ! -e $(pwd)/JUnitTests.java ]]; then # built-in way to check if file exists
+        echoerr JUnitTests.java does not exist # print error that unit test file does not exist
+        exit 1
+    fi
+
+    if [[ -z $jarname ]]; then
+        echoerr JUnit executable JAR does not exist
+        exit 1
+    fi
+
+    # check if jarname is non-empty
+    javac -d . -cp $jarname *.java
+    java -jar $jarname -cp . --scan-class-path | less -r # pipe result with color into pager
+
+    # TODO - should the compiled directory be removed?
+    rm -r $package_name
 }
-
-# error format -
-# maybe error can just be kept
-# check if javac passes without error before moving onto the other steps
-
-# test.java:3: error: class, interface, or enum expected
-# public lass test {
-#        ^
-# test.java:5: error: class, interface, or enum expected
-#     public static void main(String[] args) {
-#                   ^
-# test.java:8: error: class, interface, or enum expected
-#         another a = new another(5);
-#         ^
-# test.java:9: error: class, interface, or enum expected
-#         System.out.println(a);
-#         ^
-# test.java:10: error: class, interface, or enum expected
-#     }
-#     ^
-# 5 errors
 
 if $t_flag; then
     test_files
