@@ -1,5 +1,7 @@
 #!/bin/bash
 
+# Simplified `javac` and `java`
+
 # TODO - Show usage information
 #      - Take in flags/options
 #      - put into functions (modularize + refactor) + add main function, etc.
@@ -125,11 +127,10 @@ test_files() {
     # javac -d . -cp ./junit-platform-console-standalone-1.5.0.jar *.java
     # java -jar ./junit-platform-console-standalone-1.5.0.jar -cp . --scan-class-path
 
-    # TODO - with confirmation, ask if user wants to download the junit-platform thing
+    # https://stackoverflow.com/questions/369145/how-to-assign-a-glob-expression-to-a-variable-in-a-bash-script
+    jarfile=(junit-platform-console-standalone*.jar) # use array to enable globbing in variable
 
-    jarname=$(find . -iname "junit-platform-console-standalone*.jar") # search for the junit JAR
-
-    if [[ ! -e $(pwd)/JUnitTests.java ]] && [[ -z $jarname ]]; then
+    if [[ ! -e $(pwd)/JUnitTests.java ]] && [[ ! -f "$jarfile" ]]; then
         echoerr JUnitTests.java does not exist
         echoerr JUnit executable JAR does not exist
         exit 1
@@ -140,10 +141,28 @@ test_files() {
         exit 1
     fi
 
-    if [[ -z $jarname ]]; then
-        echoerr JUnit executable JAR does not exist
-        exit 1
+    # https://stackoverflow.com/questions/226703/how-do-i-prompt-for-yes-no-cancel-input-in-a-linux-shell-script for more info
+    # link for the executable - https://repo1.maven.org/maven2/org/junit/platform/junit-platform-console-standalone/1.7.0/junit-platform-console-standalone-1.7.0.jar
+    if [[ ! -f "$jarfile" ]]; then
+        downloaded_jar=false
+        while true; do
+            read -p "Do you want to download the Junit exectable jar? " yn # get user input
+            case $yn in
+                [Yy]* ) $(wget https://repo1.maven.org/maven2/org/junit/platform/junit-platform-console-standalone/1.7.0/junit-platform-console-standalone-1.7.0.jar); 
+                    downloaded_jar=true
+                    break
+                    ;;
+                [Nn]* ) break;;
+                * ) echo "Enter y or n"
+            esac
+        done
+        if ! $downloaded_jar; then
+            echoerr JUnit executable JAR does not exist
+            exit 1
+        fi
     fi
+
+    jarname=$(find . -iname "junit-platform-console-standalone*.jar") # search again if downloaded
 
     # check if jarname is non-empty
     javac -d . -cp $jarname *.java
