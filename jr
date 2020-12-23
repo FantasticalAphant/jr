@@ -42,7 +42,7 @@ print_usage() {
 
 # should every argument be checked or is one enough?
 # get name of the package
-package_name=$(find . -maxdepth 1 -iname '*.java' -exec grep '^package' {} + | cut -d' ' -f2 | sed 's/.$//' | tail -n1)
+package_name=$(find . -maxdepth 1 -iname '*.java' -exec grep '^package' {} + | cut -d' ' -f2 | head -n1 | sed 's/;//')
 
 # what if `javac` was previously passed; should `jr` remove those previously compiled files?
 # Print usage if there are not arguments passed with the command and there is no package
@@ -148,7 +148,7 @@ test_files() {
         while true; do
             read -p "Do you want to download the Junit exectable jar? " yn # get user input
             case $yn in
-                [Yy]* ) $(wget https://repo1.maven.org/maven2/org/junit/platform/junit-platform-console-standalone/1.7.0/junit-platform-console-standalone-1.7.0.jar); 
+                [Yy]* ) $(wget https://repo1.maven.org/maven2/org/junit/platform/junit-platform-console-standalone/1.7.0/junit-platform-console-standalone-1.7.0.jar);
                     downloaded_jar=true
                     break
                     ;;
