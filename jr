@@ -40,7 +40,7 @@ print_usage() {
     exit 1 # exit with error; might have to remove if used for help (or pass an argument to decide)
 }
 
-# should every argument be checked or is one enough?
+# TODO - use -type f for all the find commands
 # get name of the package
 package_name=$(find . -maxdepth 1 -iname '*.java' -exec grep '^package' {} + | cut -d' ' -f2 | head -n1 | sed 's/;//')
 
@@ -67,15 +67,25 @@ while getopts 'kht' flag; do
 done
 
 main_file="" # get the source file containing the main method
-for file in $(find . -maxdepth 1 -iname '*.java'); do # iterate over all java source files in current directory (allows nesting)
-    # above might be redundant (just change $file to *.java)
-    if [[ -n $(grep 'public static void main' $file) ]]; then
-        main_file=$file
-    fi
-done
-
-# e.g. turns "./test.java" into "test"
-main_file=$(echo $main_file | cut -d'.' -f2 | sed 's:^/::') # use : instead of / since it involves a path
+main_count=$(find . -maxdepth 1 -iname '*java' -exec grep 'public static void main' {} \; | wc -l)
+if [[ $main_count -le 1 ]]; then
+    # get the main file and run it
+    for file in $(find . -maxdepth 1 -iname '*.java'); do # iterate over all java source files in current directory
+        # above might be redundant (just change $file to *.java)
+        if [[ -n $(grep 'public static void main' $file) ]]; then
+            main_file=$(basename $file .java) # turns "./test.java" into "test"
+        fi
+    done
+else
+    # display a menu containing all the files that contain main and let the user decide which file to run
+    echo "There are multiple main methods. Which one would you like to run?"
+    file_arr=($(find . -maxdepth 1 -iname '*.java' -exec grep -l 'public static void main' {} +))
+    # maybe use an array to list all of the files
+    select file in $(basename -a ${file_arr[@]%.*}); do
+        main_file=$(basename $file .java)
+        break;
+    done
+fi
 
 # Remove compiled files after running the program
 remove_compiled_files() {
@@ -91,11 +101,9 @@ remove_compiled_files() {
     fi
 }
 
-# TODO - rather than completely removing errors, pass them to another function for later use
-#      - check if the file passed with jr is actually in the directory before running
+# TODO - check if the file passed with jr is actually in the directory before running
 #      - check what happens when a file that takes input is cancelled (^C) mid-run
 # can the javac in the branches be replaced with javac -d . "$1" ?
-# redirect error messages - can this be simplified?
 compile_files() {
     if [[ -n $package_name ]]; then
         # simply below if possible
@@ -162,7 +170,7 @@ test_files() {
         fi
     fi
 
-    jarname=$(find . -iname "junit-platform-console-standalone*.jar") # search again if downloaded
+    jarname=$(find . -maxdepth 1 -iname "junit-platform-console-standalone*.jar") # search again to get the name/version
 
     # check if jarname is non-empty
     javac -d . -cp $jarname *.java
