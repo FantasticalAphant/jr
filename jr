@@ -2,12 +2,8 @@
 
 # Simplified `javac` and `java`
 
-# TODO - Show usage information
-#      - Take in flags/options
+# TODO - Take in more flags/options
 #      - put into functions (modularize + refactor) + add main function, etc.
-#      - custom flags (-k to keep the jvm file or -r to remove)
-#      - some source files are non-intuitively not compiled if there are errors in some of them
-#      - add something to properly run junit tests - similar to what is done in class (-t flag or something)
 #      -
 #      -
 
@@ -17,13 +13,12 @@ echoerr() { echo "$@" 1>&2; }
 # ${args[0]} is the name of the first argument instead of the command itself
 args=("$@") # store all of the arguments in an array for later use
 files=() # all arguments that are not flags/options
-# go through each argument and remove it if it starts with '-'
 
-# Add argument to $files array if first character is not '-' (flag)
+# Add argument to $files array if it does not start with '-' (flag)
 # There probably is a much simpler way to do this
-for i in "${args[@]}"; do
-    if [[ ${i:0:1} != "-" ]]; then
-        files+=("$i")
+for file in "${args[@]}"; do
+    if [[ ${file:0:1} != "-" ]]; then
+        files+=("$file")
     fi
 done
 
@@ -34,21 +29,20 @@ t_flag=false
 # Print usage information
 print_usage() {
     printf "Usage: jr [options] <source files>\n"
-    if $h_flag; then
+    if "$h_flag"; then
         exit 0
     fi
     exit 1 # exit with error; might have to remove if used for help (or pass an argument to decide)
 }
 
-# TODO - use -type f for all the find commands
-# get name of the package
-package_name=$(find . -maxdepth 1 -iname '*.java' -exec grep '^package' {} + | cut -d' ' -f2 | head -n1 | sed 's/;//')
+# Get the name of the package
+package_name=$(find . -maxdepth 1 -type f -iname '*.java' -exec grep '^package' {} + | cut -d' ' -f2 | head -n1 | sed 's/;//')
 
-# what if `javac` was previously passed; should `jr` remove those previously compiled files?
 # Print usage if there are not arguments passed with the command and there is no package
-if [[ -z $args ]] && [[ -z $package_name ]]; then
+if [[ -z "$args" ]] && [[ -z "$package_name" ]]; then
     print_usage
 fi
+
 #(https://stackoverflow.com/questions/7069682/how-to-get-arguments-with-flags-in-bash9)
 #(https://stackoverflow.com/questions/192249/how-do-i-parse-command-line-arguments-in-bash)
 # Get possible options/flags
@@ -67,36 +61,38 @@ while getopts 'kht' flag; do
 done
 
 main_file="" # get the source file containing the main method
-main_count=$(find . -maxdepth 1 -iname '*java' -exec grep 'public static void main' {} \; | wc -l)
-if [[ $main_count -le 1 ]]; then
+# maybe change the command into a variable
+main_count=$(find . -maxdepth 1 -type f -iname '*java' -exec grep 'public static void main' {} + | wc -l)
+if (( main_count <= 1 )); then
     # get the main file and run it
-    for file in $(find . -maxdepth 1 -iname '*.java'); do # iterate over all java source files in current directory
+    for file in $(find . -maxdepth 1 -type f -iname '*.java'); do # iterate over all java source files in current directory
         # above might be redundant (just change $file to *.java)
-        if [[ -n $(grep 'public static void main' $file) ]]; then
-            main_file=$(basename $file .java) # turns "./test.java" into "test"
+        if [[ -n $(grep 'public static void main' "$file") ]]; then
+            main_file=$(basename "$file" .java) # turns "./test.java" into "test"
+            break
         fi
     done
 else
     # display a menu containing all the files that contain main and let the user decide which file to run
     echo "There are multiple main methods. Which one would you like to run?"
-    file_arr=($(find . -maxdepth 1 -iname '*.java' -exec grep -l 'public static void main' {} +))
+    file_arr=($(find . -maxdepth 1 -type f -iname '*.java' -exec grep -l 'public static void main' {} +))
     # maybe use an array to list all of the files
     select file in $(basename -a ${file_arr[@]%.*}); do
-        main_file=$(basename $file .java)
+        main_file=$(basename "$file" .java)
         break;
     done
 fi
 
 # Remove compiled files after running the program
 remove_compiled_files() {
-    if $k_flag; then # keep the files if the 'k' flag is passed
+    if "$k_flag"; then # keep the files if the 'k' flag is passed
         return
     fi
 
-    if [[ $1 == 'file' ]]; then
+    if [[ "$1" == 'file' ]]; then
         rm "${files[0]%.*}.class" # remove the compiled file
     fi
-    if [[ $1 == 'directory' ]]; then
+    if [[ "$1" == 'directory' ]]; then
         rm -r $package_name # remove the directory with .class files
     fi
 }
@@ -105,10 +101,10 @@ remove_compiled_files() {
 #      - check what happens when a file that takes input is cancelled (^C) mid-run
 # can the javac in the branches be replaced with javac -d . "$1" ?
 compile_files() {
-    if [[ -n $package_name ]]; then
+    if [[ -n "$package_name" ]]; then
         # simply below if possible
         stderr="$(javac -d . *.java 2>&1 > /dev/null)"
-        if [[ $stderr =~ "Usage" ]]; then # check if there is a usage error instead of source code error
+        if [[ "$stderr" =~ "Usage" ]]; then # check if there is a usage error instead of source code error
             # below works but is there a way to speed it up?
             echo "$stderr" | sed -z --expression='s/javac/jr/; s:<:[:; s:>:]:' # quote $stderr to preserve spacing
             exit 1
@@ -119,7 +115,7 @@ compile_files() {
         remove_compiled_files directory 2> /dev/null
     else
         stderr="$(javac "${files[0]}" 2>&1 > /dev/null)"
-        if [[ $stderr =~ "Usage" ]]; then
+        if [[ "$stderr" =~ "Usage" ]]; then
             echo "$stderr" | sed -z --expression='s/javac/jr/; s:<:[:; s:>:]:' # change to match help
             exit 1;
         else
@@ -154,8 +150,8 @@ test_files() {
     if [[ ! -f "$jarfile" ]]; then
         downloaded_jar=false
         while true; do
-            read -p "Do you want to download the Junit exectable jar? " yn # get user input
-            case $yn in
+            read -p "Do you want to download the JUnit exectable jar? " yn # get user input
+            case "$yn" in
                 [Yy]* ) $(wget https://repo1.maven.org/maven2/org/junit/platform/junit-platform-console-standalone/1.7.0/junit-platform-console-standalone-1.7.0.jar);
                     downloaded_jar=true
                     break
@@ -164,23 +160,21 @@ test_files() {
                 * ) echo "Enter y or n"
             esac
         done
-        if ! $downloaded_jar; then
+        if ! "$downloaded_jar"; then
             echoerr JUnit executable JAR does not exist
             exit 1
         fi
     fi
 
-    jarname=$(find . -maxdepth 1 -iname "junit-platform-console-standalone*.jar") # search again to get the name/version
-
-    # check if jarname is non-empty
-    javac -d . -cp $jarname *.java
-    java -jar $jarname -cp . --scan-class-path | less -r # pipe result with color into pager
+    jarname=$(find . -maxdepth 1 -type f -iname "junit-platform-console-standalone*.jar") # search again to get the name/version
+    javac -d . -cp "$jarname" *.java
+    java -jar "$jarname" -cp . --scan-class-path | less -r # pipe result with color into pager
 
     # TODO - should the compiled directory be removed?
-    rm -r $package_name
+    rm -r "$package_name"
 }
 
-if $t_flag; then
+if "$t_flag"; then
     test_files
 else
     compile_files
