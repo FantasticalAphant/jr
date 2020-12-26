@@ -30,7 +30,7 @@ print_usage() {
     if "$h_flag"; then
         exit 0
     fi
-    exit 1 # exit with error; might have to remove if used for help (or pass an argument to decide)
+    exit 1 # exit with error
 }
 
 eval_flags() {
@@ -54,8 +54,8 @@ eval_flags() {
 
 eval_main_files() {
     main_file="" # get the source file containing the main method
-    # maybe change the command into a variable
     main_count=$(find . -maxdepth 1 -type f -iname '*java' -exec grep 'public static void main' {} + | wc -l)
+
     if (( main_count <= 1 )); then
         # get the main file and run it
         file=$(find . -maxdepth 1 -type f -iname '*.java' -exec grep -l 'public static void main' {} +)
@@ -80,9 +80,12 @@ remove_compiled_files() {
 
     if [[ "$1" == 'file' ]]; then
         rm "${files[0]%.*}.class" # remove the compiled file
+        return
     fi
+
     if [[ "$1" == 'directory' ]]; then
         rm -r $package_name # remove the directory with .class files
+        return
     fi
 }
 
@@ -97,45 +100,35 @@ compile_files() {
             # below works but is there a way to speed it up?
             echo "$stderr" | sed -z --expression='s/javac/jr/; s:<:[:; s:>:]:' # quote $stderr to preserve spacing
             exit 1
-        else
-            javac -d . *.java
         fi
-        java "$package_name.$main_file" 2> /dev/null
-        remove_compiled_files directory 2> /dev/null
+        # how to exclude JUnitTests from compilation?
+        javac -d . *.java && java "$package_name.$main_file" && remove_compiled_files directory
     else
         stderr="$(javac "${files[0]}" 2>&1 > /dev/null)"
         if [[ "$stderr" =~ "Usage" ]]; then
             echo "$stderr" | sed -z --expression='s/javac/jr/; s:<:[:; s:>:]:' # change to match help
             exit 1;
-        else
-            javac "${files[0]}"
         fi
-        java "${files[0]%.*}" "${files[@]:1}" 2> /dev/null # remove the extension and copy the arguments passed
-        remove_compiled_files file 2> /dev/null
+        javac "${files[0]}" && java "${files[0]%.*}" "${files[@]:1}" && remove_compiled_files file
     fi
 }
 
 test_files() {
-    # testing format
-    # javac -d . -cp ./junit-platform-console-standalone-1.5.0.jar *.java
-    # java -jar ./junit-platform-console-standalone-1.5.0.jar -cp . --scan-class-path
-
     # https://stackoverflow.com/questions/369145/how-to-assign-a-glob-expression-to-a-variable-in-a-bash-script
     jarfile=(junit-platform-console-standalone*.jar) # use array to enable globbing in variable
 
-    if [[ ! -e $(pwd)/JUnitTests.java ]] && [[ ! -f "$jarfile" ]]; then
-        echoerr JUnitTests.java does not exist
-        echoerr JUnit executable JAR does not exist
+    if [[ ! -f $(pwd)/JUnitTests.java ]] && [[ ! -f "$jarfile" ]]; then
+        echoerr "JUnitTests.java does not exist"
+        echoerr "JUnit executable JAR does not exist"
         exit 1
     fi
 
     if [[ ! -e $(pwd)/JUnitTests.java ]]; then # built-in way to check if file exists
-        echoerr JUnitTests.java does not exist # print error that unit test file does not exist
+        echoerr "JUnitTests.java does not exist" # print error that unit test file does not exist
         exit 1
     fi
 
     # https://stackoverflow.com/questions/226703/how-do-i-prompt-for-yes-no-cancel-input-in-a-linux-shell-script for more info
-    # link for the executable - https://repo1.maven.org/maven2/org/junit/platform/junit-platform-console-standalone/1.7.0/junit-platform-console-standalone-1.7.0.jar
     if [[ ! -f "$jarfile" ]]; then
         downloaded_jar=false
         while true; do
@@ -150,7 +143,7 @@ test_files() {
             esac
         done
         if ! "$downloaded_jar"; then
-            echoerr JUnit executable JAR does not exist
+            echoerr "JUnit executable JAR does not exist"
             exit 1
         fi
     fi
@@ -159,7 +152,6 @@ test_files() {
     javac -d . -cp "$jarname" *.java
     java -jar "$jarname" -cp . --scan-class-path | less -r # pipe result with color into pager
 
-    # TODO - should the compiled directory be removed?
     rm -r "$package_name"
 }
 
