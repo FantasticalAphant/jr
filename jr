@@ -4,27 +4,25 @@
 
 # TODO - Take in more flags/options
 #      - put into functions (modularize + refactor) + add main function, etc.
-#      -
-#      -
+#      - if there is only one java file in the directory, run if it has main
+#      - print an error message if there are no java files in the directory
+#      - compile and run without JUnitTests.java if directory contains it
+
+k_flag=false # keep the compiled files if true
+h_flag=false # use of help flag - do not exit with error
+t_flag=false # test instead of run if true
 
 # Print to stderr
 echoerr() { echo "$@" 1>&2; }
 
-# ${args[0]} is the name of the first argument instead of the command itself
-args=("$@") # store all of the arguments in an array for later use
-files=() # all arguments that are not flags/options
-
-# Add argument to $files array if it does not start with '-' (flag)
-# There probably is a much simpler way to do this
-for file in "${args[@]}"; do
-    if [[ ${file:0:1} != "-" ]]; then
-        files+=("$file")
-    fi
-done
-
-k_flag=false # keep the compiled files if true
-h_flag=false # use of help flag - do not exit with error
-t_flag=false
+get_file_list() {
+    # Add argument to $files array if it does not start with '-' (flag)
+    for file in "${args[@]}"; do
+        if [[ ${file:0:1} != "-" ]]; then
+            files+=("$file")
+        fi
+    done
+}
 
 # Print usage information
 print_usage() {
@@ -35,53 +33,44 @@ print_usage() {
     exit 1 # exit with error; might have to remove if used for help (or pass an argument to decide)
 }
 
-# Get the name of the package
-package_name=$(find . -maxdepth 1 -type f -iname '*.java' -exec grep '^package' {} + | cut -d' ' -f2 | head -n1 | sed 's/;//')
-
-# Print usage if there are not arguments passed with the command and there is no package
-if [[ -z "$args" ]] && [[ -z "$package_name" ]]; then
-    print_usage
-fi
-
-#(https://stackoverflow.com/questions/7069682/how-to-get-arguments-with-flags-in-bash9)
-#(https://stackoverflow.com/questions/192249/how-do-i-parse-command-line-arguments-in-bash)
-# Get possible options/flags
-while getopts 'kht' flag; do
-    case "${flag}" in
-        k) k_flag=true # do not remove the compiled file if this is the case
-           ;;
-        h) h_flag=true
-           print_usage
-           ;;
-        t) t_flag=true
-           ;;
-        *) print_usage
-           ;;
-    esac
-done
-
-main_file="" # get the source file containing the main method
-# maybe change the command into a variable
-main_count=$(find . -maxdepth 1 -type f -iname '*java' -exec grep 'public static void main' {} + | wc -l)
-if (( main_count <= 1 )); then
-    # get the main file and run it
-    for file in $(find . -maxdepth 1 -type f -iname '*.java'); do # iterate over all java source files in current directory
-        # above might be redundant (just change $file to *.java)
-        if [[ -n $(grep 'public static void main' "$file") ]]; then
-            main_file=$(basename "$file" .java) # turns "./test.java" into "test"
-            break
-        fi
+eval_flags() {
+    #(https://stackoverflow.com/questions/7069682/how-to-get-arguments-with-flags-in-bash9)
+    #(https://stackoverflow.com/questions/192249/how-do-i-parse-command-line-arguments-in-bash)
+    # Get possible options/flags
+    while getopts 'kht' flag; do
+        case "${flag}" in
+            k) k_flag=true # do not remove the compiled file if this is the case
+               ;;
+            h) h_flag=true
+               print_usage
+               ;;
+            t) t_flag=true
+               ;;
+            *) print_usage
+               ;;
+        esac
     done
-else
-    # display a menu containing all the files that contain main and let the user decide which file to run
-    echo "There are multiple main methods. Which one would you like to run?"
-    file_arr=($(find . -maxdepth 1 -type f -iname '*.java' -exec grep -l 'public static void main' {} +))
-    # maybe use an array to list all of the files
-    select file in $(basename -a ${file_arr[@]%.*}); do
-        main_file=$(basename "$file" .java)
-        break;
-    done
-fi
+}
+
+eval_main_files() {
+    main_file="" # get the source file containing the main method
+    # maybe change the command into a variable
+    main_count=$(find . -maxdepth 1 -type f -iname '*java' -exec grep 'public static void main' {} + | wc -l)
+    if (( main_count <= 1 )); then
+        # get the main file and run it
+        file=$(find . -maxdepth 1 -type f -iname '*.java' -exec grep -l 'public static void main' {} +)
+        main_file=$(basename "$file" .java) # turns "./test.java" into "test"
+    else
+        # display a menu containing all the files that contain main and let the user decide which file to run
+        echo "There are multiple main methods. Which one would you like to run?"
+        file_arr=($(find . -maxdepth 1 -type f -iname '*.java' -exec grep -l 'public static void main' {} +))
+        # maybe use an array to list all of the files
+        select file in $(basename -a ${file_arr[@]%.*}); do
+            main_file=$(basename "$file" .java)
+            break;
+        done
+    fi
+}
 
 # Remove compiled files after running the program
 remove_compiled_files() {
@@ -174,8 +163,23 @@ test_files() {
     rm -r "$package_name"
 }
 
-if "$t_flag"; then
-    test_files
-else
-    compile_files
-fi
+main() {
+    # ${args[0]} is the name of the first argument instead of the command itself
+    args=("$@") # store all of the arguments in an array for later use
+    files=() # all arguments that are not flags/options
+
+    get_file_list "$args"
+
+    # Get the name of the package
+    package_name=$(find . -maxdepth 1 -type f -iname '*.java' -exec grep '^package' {} + | cut -d' ' -f2 | head -n1 | sed 's/;//')
+
+    # Print usage if there are no arguments passed with the command and no package
+    [[ -z "$args" ]] && [[ -z "$package_name" ]] && print_usage
+
+    eval_flags "$@"
+    eval_main_files
+
+    if "$t_flag"; then test_files; else compile_files; fi
+}
+
+main "$@"
