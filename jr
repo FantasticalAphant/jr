@@ -7,6 +7,7 @@
 #      - if there is only one java file in the directory, run if it has main
 #      - print an error message if there are no java files in the directory
 #      - compile and run without JUnitTests.java if directory contains it
+#      - speed this thing up (through minor optimizations)
 
 k_flag=false # keep the compiled files if true
 h_flag=false # use of help flag - do not exit with error
@@ -39,12 +40,12 @@ eval_flags() {
     # Get possible options/flags
     while getopts 'kht' flag; do
         case "${flag}" in
-            k) k_flag=true # do not remove the compiled file if this is the case
+            k) k_flag='true' # do not remove the compiled file if this is the case
                ;;
-            h) h_flag=true
+            h) h_flag='true'
                print_usage
                ;;
-            t) t_flag=true
+            t) t_flag='true'
                ;;
             *) print_usage
                ;;
@@ -84,7 +85,7 @@ remove_compiled_files() {
     fi
 
     if [[ "$1" == 'directory' ]]; then
-        rm -r $package_name # remove the directory with .class files
+        rm -rf $package_name # remove the directory with .class files
         return
     fi
 }
@@ -101,8 +102,13 @@ compile_files() {
             echo "$stderr" | sed -z --expression='s/javac/jr/; s:<:[:; s:>:]:' # quote $stderr to preserve spacing
             exit 1
         fi
-        # how to exclude JUnitTests from compilation?
-        javac -d . *.java && java "$package_name.$main_file" && remove_compiled_files directory
+        # could also try using extglob
+        if [[ -f "JUnitTests.java" ]]; then # exclude JUnitTests file when compiling
+            find . -maxdepth 1 -type f ! -iname "JUnitTests.java" -iname '*java' -exec javac -d . {} +
+        else
+            javac -d . *.java
+        fi
+        java "$package_name.$main_file" && remove_compiled_files directory
     else
         stderr="$(javac "${files[0]}" 2>&1 > /dev/null)"
         if [[ "$stderr" =~ "Usage" ]]; then
@@ -117,13 +123,13 @@ test_files() {
     # https://stackoverflow.com/questions/369145/how-to-assign-a-glob-expression-to-a-variable-in-a-bash-script
     jarfile=(junit-platform-console-standalone*.jar) # use array to enable globbing in variable
 
-    if [[ ! -f $(pwd)/JUnitTests.java ]] && [[ ! -f "$jarfile" ]]; then
+    if [[ ! -f "JUnitTests.java" ]] && [[ ! -f "$jarfile" ]]; then
         echoerr "JUnitTests.java does not exist"
         echoerr "JUnit executable JAR does not exist"
         exit 1
     fi
 
-    if [[ ! -e $(pwd)/JUnitTests.java ]]; then # built-in way to check if file exists
+    if [[ ! -f "JUnitTests.java" ]]; then # built-in way to check if file exists
         echoerr "JUnitTests.java does not exist" # print error that unit test file does not exist
         exit 1
     fi
@@ -148,7 +154,7 @@ test_files() {
         fi
     fi
 
-    jarname=$(find . -maxdepth 1 -type f -iname "junit-platform-console-standalone*.jar") # search again to get the name/version
+    jarname=$(find . -maxdepth 1 -type f -iname "junit-platform-console-standalone-*.jar") # search again to get the name/version
     javac -d . -cp "$jarname" *.java
     java -jar "$jarname" -cp . --scan-class-path | less -r # pipe result with color into pager
 
