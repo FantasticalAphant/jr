@@ -3,13 +3,17 @@
 # Simplified `javac` and `java`
 
 # TODO - Take in more flags/options
-#      - put into functions (modularize + refactor) + add main function, etc.
+#      - refine modularization
 #      - if there is only one java file in the directory, run if it has main
 #      - print an error message if there are no java files in the directory
-#      - compile and run without JUnitTests.java if directory contains it
-#      - speed this thing up (through minor optimizations)
+#      - allow user to choose which java files they want to exclude from compiling process
+#      - speed this thing up (through optimizations)
+#      - use a timestamp to determine when to recompile
+#      - change the default to keeping the files instead of deleting them
+#      - invalid flag if flag passed without any arguments
+#      - file is not deleted if user exits using ctrl-c
 
-k_flag=false # keep the compiled files if true
+d_flag=false # delete the compiled files if true
 h_flag=false # use of help flag - do not exit with error
 t_flag=false # test instead of run if true
 
@@ -38,9 +42,9 @@ eval_flags() {
     #(https://stackoverflow.com/questions/7069682/how-to-get-arguments-with-flags-in-bash9)
     #(https://stackoverflow.com/questions/192249/how-do-i-parse-command-line-arguments-in-bash)
     # Get possible options/flags
-    while getopts 'kht' flag; do
+    while getopts 'dht' flag; do
         case "${flag}" in
-            k) k_flag='true' # do not remove the compiled file if this is the case
+            d) d_flag='true' # do not remove the compiled file if this is the case
                ;;
             h) h_flag='true'
                print_usage
@@ -75,7 +79,7 @@ eval_main_files() {
 
 # Remove compiled files after running the program
 remove_compiled_files() {
-    if "$k_flag"; then # keep the files if the 'k' flag is passed
+    if ! "$d_flag"; then # keep the files if the 'k' flag is passed
         return
     fi
 
