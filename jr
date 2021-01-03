@@ -8,7 +8,6 @@
 #      - print an error message if there are no java files in the directory
 #      - allow user to choose which java files they want to exclude from compiling process
 #      - speed this thing up (through optimizations)
-#      - use a timestamp to determine when to recompile
 #      - change the default to keeping the files instead of deleting them
 #      - invalid flag if flag passed without any arguments
 #      - file is not deleted if user exits using ctrl-c
@@ -109,17 +108,28 @@ compile_files() {
         # could also try using extglob
         if [[ -f "JUnitTests.java" ]]; then # exclude JUnitTests file when compiling
             find . -maxdepth 1 -type f ! -iname "JUnitTests.java" -iname '*java' -exec javac -d . {} +
-        else
-            javac -d . *.java
         fi
-        java "$package_name.$main_file" && remove_compiled_files directory
+
+        # only recompile if any of the .java files have been changed
+        # this works because java automatically recompiles when one of the component files is newer
+        if [[ ! -f ".timestamp" ]] || [[ ".timestamp" -ot "${main_file}.java" ]]; then
+            touch ".timestamp"
+            javac -d . *.java || rm ".timestamp"
+        fi
+        java "$package_name.$main_file" 2> /dev/null && remove_compiled_files directory
     else
         stderr="$(javac "${files[0]}" 2>&1 > /dev/null)"
         if [[ "$stderr" =~ "Usage" ]]; then
             echo "$stderr" | sed -z --expression='s/javac/jr/; s:<:[:; s:>:]:' # change to match help
             exit 1;
         fi
-        javac "${files[0]}" && java "${files[0]%.*}" "${files[@]:1}" && remove_compiled_files file
+
+        # FIXME - now stderr from javac is super slow
+        if [[ ! -f ".timestamp" ]] || [[ ".timestamp" -ot "${files[0]}" ]]; then
+            touch ".timestamp"
+            javac "${files[0]}" || rm ".timestamp"
+        fi
+        java "${files[0]%.*}" "${files[@]:1}" 2> /dev/null && remove_compiled_files file
     fi
 }
 
