@@ -11,6 +11,7 @@
 #      - change the default to keeping the files instead of deleting them
 #      - invalid flag if flag passed without any arguments
 #      - file is not deleted if user exits using ctrl-c
+#      - javac can just be skipped if the file being compiled has no dependencies
 
 d_flag=false # delete the compiled files if true
 h_flag=false # use of help flag - do not exit with error
@@ -105,9 +106,13 @@ compile_files() {
             echo "$stderr" | sed -z --expression='s/javac/jr/; s:<:[:; s:>:]:' # quote $stderr to preserve spacing
             exit 1
         fi
+
         # could also try using extglob
-        if [[ -f "JUnitTests.java" ]]; then # exclude JUnitTests file when compiling
+        # FIXME - clean this code up
+        if [[ -f "JUnitTests.java" ]] && { [[ ! -f ".timestamp" ]] || [[ ".timestamp" -ot "${main_file}.java" ]]; }; then
             find . -maxdepth 1 -type f ! -iname "JUnitTests.java" -iname '*java' -exec javac -d . {} +
+            java "$package_name.$main_file" 2> /dev/null && remove_compiled_files directory
+            return
         fi
 
         # only recompile if any of the .java files have been changed
