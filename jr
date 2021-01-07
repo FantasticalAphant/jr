@@ -7,8 +7,6 @@
 #      - if there is only one java file in the directory, run if it has main
 #      - print an error message if there are no java files in the directory
 #      - allow user to choose which java files they want to exclude from compiling process
-#      - speed this thing up (through optimizations)
-#      - change the default to keeping the files instead of deleting them
 #      - invalid flag if flag passed without any arguments
 #      - file is not deleted if user exits using ctrl-c
 #      - javac can just be skipped if the file being compiled has no dependencies
@@ -67,7 +65,7 @@ eval_main_files() {
         main_file=$(basename "$file" .java) # turns "./test.java" into "test"
     else
         # display a menu containing all the files that contain main and let the user decide which file to run
-        echo "There are multiple main methods. Which one would you like to run?"
+        echo "There are multiple files with main methods. Which one would you like to run?"
         file_arr=($(find . -maxdepth 1 -type f -iname '*.java' -exec grep -l 'public static void main' {} +))
         # maybe use an array to list all of the files
         select file in $(basename -a ${file_arr[@]%.*}); do
@@ -119,9 +117,10 @@ compile_files() {
         # this works because java automatically recompiles when one of the component files is newer
         if [[ ! -f ".timestamp" ]] || [[ ".timestamp" -ot "${main_file}.java" ]]; then
             touch ".timestamp"
-            javac -d . *.java || rm ".timestamp"
+            { javac -d . *.java && java "$package_name.$main_file" && remove_compiled_files directory; } || rm ".timestamp"
+            return
         fi
-        java "$package_name.$main_file" 2> /dev/null && remove_compiled_files directory
+        java "$package_name.$main_file" && remove_compiled_files directory
     else
         stderr="$(javac "${files[0]}" 2>&1 > /dev/null)"
         if [[ "$stderr" =~ "Usage" ]]; then
@@ -129,12 +128,13 @@ compile_files() {
             exit 1;
         fi
 
-        # FIXME - now stderr from javac is super slow
+        # TODO - javac can be skipped, speeding things up
         if [[ ! -f ".timestamp" ]] || [[ ".timestamp" -ot "${files[0]}" ]]; then
             touch ".timestamp"
-            javac "${files[0]}" || rm ".timestamp"
+            { javac "${files[0]}" && java "${files[0]%.*}" "${files[@]:1}" && remove_compiled_files file; } || rm ".timestamp"
+            return
         fi
-        java "${files[0]%.*}" "${files[@]:1}" 2> /dev/null && remove_compiled_files file
+        java "${files[0]%.*}" "${files[@]:1}" && remove_compiled_files file
     fi
 }
 
