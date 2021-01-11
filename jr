@@ -18,15 +18,6 @@ t_flag=false # test instead of run if true
 # Print to stderr
 echoerr() { echo "$@" 1>&2; }
 
-get_file_list() {
-    # Add argument to $files array if it does not start with '-' (flag)
-    for file in "${args[@]}"; do
-        if [[ ${file:0:1} != "-" ]]; then
-            files+=("$file")
-        fi
-    done
-}
-
 # Print usage information
 print_usage() {
     printf "Usage: jr [options] <source files>\n"
@@ -59,6 +50,11 @@ eval_main_files() {
     main_file="" # get the source file containing the main method
     main_count=$(find . -maxdepth 1 -type f -iname '*java' -exec grep 'public static void main' {} + | wc -l)
 
+    if (( java_count == 1 )); then
+        main_file=$(basename "${java_files[0]}" .java)
+        return
+    fi
+
     if (( main_count <= 1 )); then
         # get the main file and run it
         file=$(find . -maxdepth 1 -type f -iname '*.java' -exec grep -l 'public static void main' {} +)
@@ -81,8 +77,10 @@ remove_compiled_files() {
         return
     fi
 
+    # TODO - if d flag is passed, just run java directory (skipping over javac)
     if [[ "$1" == 'file' ]]; then
-        rm "${files[0]%.*}.class" # remove the compiled file
+        rm "${main_file}.class" # remove the compiled file
+        rm ".timestamp"
         return
     fi
 
@@ -97,7 +95,7 @@ remove_compiled_files() {
 # can the javac in the branches be replaced with javac -d . "$1" ?
 compile_files() {
     if [[ -n "$package_name" ]]; then
-        # simply below if possible
+        # simplify below if possible
         stderr="$(javac -d . *.java 2>&1 > /dev/null)"
         if [[ "$stderr" =~ "Usage" ]]; then # check if there is a usage error instead of source code error
             # below works but is there a way to speed it up?
@@ -122,19 +120,19 @@ compile_files() {
         fi
         java "$package_name.$main_file" && remove_compiled_files directory
     else
-        stderr="$(javac "${files[0]}" 2>&1 > /dev/null)"
+        stderr="$(javac "$main_file" 2>&1 > /dev/null)"
         if [[ "$stderr" =~ "Usage" ]]; then
             echo "$stderr" | sed -z --expression='s/javac/jr/; s:<:[:; s:>:]:' # change to match help
             exit 1;
         fi
 
-        # TODO - javac can be skipped, speeding things up
-        if [[ ! -f ".timestamp" ]] || [[ ".timestamp" -ot "${files[0]}" ]]; then
+        # TODO - javac can be skipped, speeding `jr -d` up
+        if [[ ! -f ".timestamp" ]] || [[ ".timestamp" -ot "${main_file}.java" ]]; then
             touch ".timestamp"
-            { javac "${files[0]}" && java "${files[0]%.*}" "${files[@]:1}" && remove_compiled_files file; } || rm ".timestamp"
+            { javac "${main_file}.java" && java "${main_file}.java" && remove_compiled_files file; } || rm ".timestamp"
             return
         fi
-        java "${files[0]%.*}" "${files[@]:1}" && remove_compiled_files file
+        java "${main_file%.*}" && remove_compiled_files file
     fi
 }
 
@@ -183,15 +181,18 @@ test_files() {
 main() {
     # ${args[0]} is the name of the first argument instead of the command itself
     args=("$@") # store all of the arguments in an array for later use
-    files=() # all arguments that are not flags/options
 
-    get_file_list "$args"
+    # No need to pass any files to the `jr` command - it should do everything automatically
+    java_files=($(find . -maxdepth 1 -type f -iname '*.java'))
+    java_count=${#java_files[@]} # stores the length of the array
+
+    if (( java_count == 0 )); then
+        echo "No Java source files in the current directory. Exiting..."
+        exit 1
+    fi
 
     # Get the name of the package
     package_name=$(find . -maxdepth 1 -type f -iname '*.java' -exec grep '^package' {} + | cut -d' ' -f2 | head -n1 | sed 's/;//')
-
-    # Print usage if there are no arguments passed with the command and no package
-    [[ -z "$args" ]] && [[ -z "$package_name" ]] && print_usage
 
     eval_flags "$@"
     eval_main_files
