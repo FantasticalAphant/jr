@@ -80,7 +80,7 @@ remove_compiled_files() {
     # TODO - if d flag is passed, just run java directory (skipping over javac)
     if [[ "$1" == 'file' ]]; then
         rm "${main_file}.class" # remove the compiled file
-        rm ".timestamp"
+        touch -m "${main_file}.java"
         return
     fi
 
@@ -96,6 +96,7 @@ remove_compiled_files() {
 compile_files() {
     if [[ -n "$package_name" ]]; then
         # simplify below if possible
+        # FIXME - print out stderr, if needed, without having to run javac twice
         stderr="$(javac -d . *.java 2>&1 > /dev/null)"
         if [[ "$stderr" =~ "Usage" ]]; then # check if there is a usage error instead of source code error
             # below works but is there a way to speed it up?
@@ -104,7 +105,7 @@ compile_files() {
         fi
 
         # could also try using extglob
-        # FIXME - clean this code up
+        # TODO - clean this code up
         if [[ -f "JUnitTests.java" ]] && { [[ ! -f ".timestamp" ]] || [[ ".timestamp" -ot "${main_file}.java" ]]; }; then
             find . -maxdepth 1 -type f ! -iname "JUnitTests.java" -iname '*java' -exec javac -d . {} +
             java "$package_name.$main_file" 2> /dev/null && remove_compiled_files directory
@@ -120,19 +121,20 @@ compile_files() {
         fi
         java "$package_name.$main_file" && remove_compiled_files directory
     else
-        stderr="$(javac "$main_file" 2>&1 > /dev/null)"
+        stderr="$(javac "${main_file}.java" 2>&1 > /dev/null)"
         if [[ "$stderr" =~ "Usage" ]]; then
             echo "$stderr" | sed -z --expression='s/javac/jr/; s:<:[:; s:>:]:' # change to match help
             exit 1;
         fi
 
         # TODO - javac can be skipped, speeding `jr -d` up
+        # FIXME - running jr is very slow if it isn't already compiled (almost twice the duration)
         if [[ ! -f ".timestamp" ]] || [[ ".timestamp" -ot "${main_file}.java" ]]; then
             touch ".timestamp"
-            { javac "${main_file}.java" && java "${main_file}.java" && remove_compiled_files file; } || rm ".timestamp"
+            { javac "${main_file}.java" && java "${main_file}" && remove_compiled_files file; } || rm ".timestamp"
             return
         fi
-        java "${main_file%.*}" && remove_compiled_files file
+        java "${main_file}" && remove_compiled_files file
     fi
 }
 
