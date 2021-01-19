@@ -111,12 +111,24 @@ compile_test() {
     return $return_code
 }
 
+update_check() {
+    # 0 is true and 1 is false
+    isOlder=1
+    for file in "${java_files[@]}"; do
+        if [[ "$file" -nt ".timestamp" ]]; then
+            isOlder=0
+            break
+        fi
+    done
+    return $isOlder
+}
+
 # TODO - check if the file passed with jr is actually in the directory before running
 #      - check what happens when a file that takes input is cancelled (^C) mid-run
 # can the javac in the branches be replaced with javac -d . "$1" ?
 compile_files() {
     if [[ -n "$package_name" ]]; then
-        if [[ ! -f ".timestamp" ]] || [[ ".timestamp" -ot "${main_file}.java" ]]; then
+        if [[ ! -f ".timestamp" ]] || update_check; then
             touch ".timestamp"
             if [[ -f "JUnitTests.java" ]]; then
                 compile_test "junit"
