@@ -87,6 +87,7 @@ remove_compiled_files() {
 
     if [[ "$1" == 'directory' ]]; then
         rm -rf $package_name # remove the directory with .class files
+        touch -m "${main_file}.java"
         return
     fi
 }
@@ -193,8 +194,7 @@ test_files() {
     javac -d . -cp "$jarname" *.java
     java -jar "$jarname" -cp . --scan-class-path | less -r # pipe result with color into pager
 
-    # FIXME - first `jr` after `jr -t` fails
-    rm -r "$package_name"
+    remove_compiled_files directory
 }
 
 main() {
